@@ -1,0 +1,49 @@
+{
+  "name": "rangeur-cc",
+  "productName": "Rangeur CC",
+  "version": "1.0.0",
+  "description": "Installe automatiquement le CC Sims 4 téléchargé dans le bon dossier Mods.",
+  "main": "src/main.js",
+  "author": "Rangeur CC",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/run.js",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "fr.rangeurcc.app",
+    "productName": "Rangeur CC",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/7zip-bin/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Rangeur CC"
+    }
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "adm-zip": "^0.6.1",
+    "node-unrar-js": "^2.0.2"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  }
+}

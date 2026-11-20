@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'; script-src 'self'">
+  <title>Rangeur CC</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="../../assets/icon.png" alt="" width="30" height="30">
+      <div>
+        <h1>Rangeur CC</h1>
+        <p class="status" id="status"><span class="dot"></span><span id="statusText">Surveillance active</span></p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost" id="btnTsr" title="Ouvrir The Sims Resource dans le navigateur">Ouvrir TSR</button>
+      <button class="btn ghost" id="btnMods">Dossier Mods</button>
+      <button class="btn icon" id="btnSettings" aria-label="Réglages" title="Réglages">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="busy" class="busy" hidden><span class="spinner"></span><span id="busyText"></span></div>
+  <div id="banners" class="banners"></div>
+
+  <main>
+    <div class="toolbar" id="toolbar" hidden>
+      <input type="search" id="search" placeholder="Rechercher un CC ou un créateur" autocomplete="off">
+      <div class="segmented" role="tablist" id="filter">
+        <button role="tab" data-f="all" aria-selected="true">Tout</button>
+        <button role="tab" data-f="on" aria-selected="false">Actifs</button>
+        <button role="tab" data-f="off" aria-selected="false">Désactivés</button>
+      </div>
+      <span class="count" id="count"></span>
+    </div>
+
+    <section id="grid" class="grid" aria-live="polite"></section>
+
+    <section id="empty" class="empty" hidden>
+      <h2>Rien d'installé pour l'instant</h2>
+      <p>Laisse l'app ouverte (ou dans la zone de notification) et télécharge comme d'habitude.</p>
+      <ol class="steps">
+        <li><span>1</span><div><strong>Va sur The Sims Resource</strong><small>ou n'importe quel site de CC</small></div></li>
+        <li><span>2</span><div><strong>Clique sur Télécharger</strong><small>.package, .ts4script, .zip, .rar ou .7z</small></div></li>
+        <li><span>3</span><div><strong>C'est rangé</strong><small>dans Mods, avec son aperçu ici</small></div></li>
+      </ol>
+      <p class="hint">Tu peux aussi glisser-déposer des fichiers dans cette fenêtre.</p>
+    </section>
+  </main>
+
+  <aside id="settings" class="drawer" hidden aria-label="Réglages">
+    <div class="drawer-head">
+      <h2>Réglages</h2>
+      <button class="btn icon" id="btnCloseSettings" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <section class="field">
+        <h3>Dossier du jeu</h3>
+        <div id="simsDirs" class="radio-list"></div>
+        <button class="btn small" id="btnPickSims">Choisir un autre dossier…</button>
+      </section>
+      <section class="field">
+        <h3>Dossier surveillé</h3>
+        <p class="path" id="dlPath"></p>
+        <div class="row">
+          <button class="btn small" id="btnPickDl">Changer…</button>
+          <button class="btn small ghost" id="btnOpenDl">Ouvrir</button>
+        </div>
+      </section>
+      <section class="field">
+        <h3>Comportement</h3>
+        <label class="check"><input type="checkbox" data-s="openAtLogin"><span>Lancer au démarrage de Windows</span></label>
+        <label class="check"><input type="checkbox" data-s="keepInTray"><span>Continuer en arrière-plan quand je ferme la fenêtre</span></label>
+        <label class="check"><input type="checkbox" data-s="removeAfterInstall"><span>Mettre les archives à la corbeille une fois installées</span></label>
+        <label class="check"><input type="checkbox" data-s="notifications"><span>Notification à chaque installation</span></label>
+      </section>
+      <section class="field">
+        <h3>Activité récente</h3>
+        <ul id="activity" class="activity"></ul>
+      </section>
+      <p class="version" id="version"></p>
+    </div>
+  </aside>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <div id="drop" class="drop" hidden><div>Lâche les fichiers pour les installer</div></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
