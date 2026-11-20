@@ -99,7 +99,8 @@ async function fetchPagePreview(zone) {
           }
         } catch { /* pas d'image */ }
       }
-      if (name || image) return { pageUrl: res.url || url, name, creator, image };
+      const description = meta(html, 'og:description') || meta(html, 'description');
+      if (name || image) return { pageUrl: res.url || url, name, creator, image, description };
     } catch { /* page suivante */ }
   }
   return null;

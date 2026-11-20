@@ -1,26 +1,12 @@
 'use strict';
-// Devine la catégorie d'un CC pour le ranger dans Mods/<Catégorie>/<Nom>/.
-// 1. la catégorie TSR présente dans l'URL de la fiche (fiable) ;
-// 2. sinon, le contenu du .package (types de ressources + nom de la pièce CAS).
+// Devine la catégorie d'un CC pour le ranger dans Mods/<Catégorie>/<Sous-catégorie>/<Nom>/.
+// 1. la catégorie TSR présente dans l'URL de la fiche (fiable), affinée par le titre ;
+// 2. sinon, le contenu du .package (types de ressources + nom de la pièce CAS) ;
+// 3. sinon, le nom du CC.
 
 const fs = require('fs');
 const { readIndex, readEntry } = require('./dbpf');
-
-const CAT = {
-  hair: 'Cheveux',
-  clothes: 'Vêtements',
-  shoes: 'Chaussures',
-  accessories: 'Accessoires',
-  makeup: 'Maquillage',
-  skin: 'Peau et yeux',
-  furniture: 'Meubles et objets',
-  build: 'Construction',
-  poses: 'Poses et animations',
-  pets: 'Animaux',
-  gameplay: 'Mods de gameplay',
-  tray: 'Lots et Sims',
-  other: 'Autres'
-};
+const { CAT, classifyTsr, subFor, norm } = require('./taxonomy');
 
 // Ordre important : "makeup-female-eyecolors" doit tomber dans Peau et yeux.
 // Mots anglais (TSR, noms EA des pièces CAS) et français (noms de fichiers).
@@ -40,25 +26,26 @@ const RULES = [
 ];
 
 function classifyText(text) {
-  const t = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const t = norm(text);
   for (const [cat, re] of RULES) if (re.test(t)) return cat;
+  return null;
+}
+
+/** Catégorie TSR ("hair-hairstyles", "objects-furnishing-comfort-beds"...) présente dans une URL de fiche. */
+function tsrSlug(...urls) {
+  for (const u of urls) {
+    const m = u && u.match(/thesimsresource\.com\/.*?category\/sims4-([a-z0-9-]+)/i);
+    if (m) return m[1].toLowerCase();
+  }
   return null;
 }
 
 /** Catégorie à partir d'une URL de fiche TSR (".../category/sims4-hair-hairstyles/..."). */
 function categoryFromUrl(...urls) {
-  for (const u of urls) {
-    const m = u && u.match(/thesimsresource\.com\/.*?category\/sims4-([a-z0-9-]+)/i);
-    if (!m) continue;
-    const slug = m[1].toLowerCase();
-    if (/^(lots|rooms|sims)\b/.test(slug)) return CAT.tray;
-    if (/^pets\b/.test(slug)) return CAT.pets;
-    if (/^mods\b/.test(slug)) return CAT.gameplay;
-    if (/^(objects|objectrecolors)\b/.test(slug) && !/wall|floor|terrain|roof/.test(slug)) return CAT.furniture;
-    const c = classifyText(slug.replace(/-/g, ' '));
-    if (c) return c;
-  }
-  return null;
+  const slug = tsrSlug(...urls);
+  if (!slug) return null;
+  const c = classifyTsr({ slug });
+  return c ? c.category : classifyText(slug.replace(/-/g, ' '));
 }
 
 // Types de ressources Sims 4
@@ -87,7 +74,8 @@ function casPartNames(fd, entries, max = 4) {
         const code = (slice[i] << 8) | slice[i + 1];
         s += code >= 32 && code < 127 ? String.fromCharCode(code) : ' ';
       }
-      names.push(s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' '));
+      // Garde le préfixe EA ("yf", "ym", "cu"...) séparé : "yfHair_Long" -> "yf Hair Long"
+      names.push(s.replace(/\b([yaetcpi][fmu])(?=[A-Z])/g, '$1 ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' '));
     }
   }
   return names;
@@ -96,48 +84,71 @@ function casPartNames(fd, entries, max = 4) {
 // Pièce CAS sans indice dans son nom : le nom du CC tranchera.
 const WEAK_CAS = 'cas-inconnu';
 
-function categoryFromPackage(file) {
+/** @returns {{category:string|null, text:string}} text : noms des pièces CAS lus */
+function analyzePackage(file) {
   let fd;
   try {
     fd = fs.openSync(file, 'r');
     const entries = readIndex(fd, fs.fstatSync(fd).size);
     const types = new Set(entries.map(e => e.type));
     if (types.has(T.CASP)) {
-      const fromName = classifyText(casPartNames(fd, entries).join(' '));
-      return fromName && fromName !== CAT.gameplay ? fromName : WEAK_CAS;
+      const text = casPartNames(fd, entries).join(' ');
+      const fromName = classifyText(text);
+      return { category: fromName && fromName !== CAT.gameplay ? fromName : WEAK_CAS, text };
     }
-    if (T.WALL_FLOOR.some(t => types.has(t))) return CAT.build;
-    if (types.has(T.COBJ) || types.has(T.OBJD)) return CAT.furniture;
-    if (types.has(T.CLIP)) return CAT.poses;
-    if (T.TUNING.some(t => types.has(t))) return CAT.gameplay;
-    return null;
+    if (T.WALL_FLOOR.some(t => types.has(t))) return { category: CAT.build, text: '' };
+    if (types.has(T.COBJ) || types.has(T.OBJD)) return { category: CAT.furniture, text: '' };
+    if (types.has(T.CLIP)) return { category: CAT.poses, text: '' };
+    if (T.TUNING.some(t => types.has(t))) return { category: CAT.gameplay, text: '' };
+    return { category: null, text: '' };
   } catch {
-    return null;
+    return { category: null, text: '' };
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
   }
 }
 
+function categoryFromPackage(file) {
+  return analyzePackage(file).category;
+}
+
 /**
- * @param {{urls:string[], packages:string[], hasScript:boolean, trayOnly:boolean, name?:string}} info
+ * @param {{urls:string[], packages:string[], hasScript:boolean, trayOnly:boolean, name?:string, description?:string}} info
+ * @returns {{category:string, sub:string|null}}
  */
-function categorize({ urls = [], packages = [], hasScript = false, trayOnly = false, name = '' }) {
-  if (trayOnly) return CAT.tray;
-  if (hasScript) return CAT.gameplay;
+function categorizeDetailed({ urls = [], packages = [], hasScript = false, trayOnly = false, name = '', description = '' }) {
+  if (trayOnly) return { category: CAT.tray, sub: null };
+  if (hasScript) return { category: CAT.gameplay, sub: null };
+
+  // Fiche TSR : sa catégorie, affinée par le titre et la description.
   // Un lot ou un foyer TSR peut contenir son propre CC : il reste groupé avec le lot.
-  const fromUrl = categoryFromUrl(...urls);
-  if (fromUrl) return fromUrl;
+  const slug = tsrSlug(...urls);
+  if (slug) {
+    const c = classifyTsr({ slug, title: name, description });
+    if (c) return { category: c.category, sub: c.subs[0] || null };
+    const fromSlug = classifyText(slug.replace(/-/g, ' '));
+    if (fromSlug) return { category: fromSlug, sub: subFor(fromSlug, name) };
+  }
+
   const votes = {};
+  const texts = [];
   for (const p of packages.slice(0, 8)) {
-    const c = categoryFromPackage(p);
-    if (c) votes[c] = (votes[c] || 0) + 1;
+    const { category, text } = analyzePackage(p);
+    if (category) votes[category] = (votes[category] || 0) + 1;
+    if (text) texts.push(text);
   }
   const best = Object.entries(votes).sort((a, b) => b[1] - a[1])[0];
   const fromName = classifyText(name);
-  if (best && best[0] !== WEAK_CAS) return best[0];
+  let category;
+  if (best && best[0] !== WEAK_CAS) category = best[0];
   // Pièce CAS sans indice : le nom du CC tranche, sinon c'est le plus souvent un vêtement.
-  if (best) return fromName && fromName !== CAT.gameplay ? fromName : CAT.clothes;
-  return fromName || CAT.other;
+  else if (best) category = fromName && fromName !== CAT.gameplay ? fromName : CAT.clothes;
+  else category = fromName || CAT.other;
+  return { category, sub: subFor(category, name, texts.join(' ')) };
 }
 
-module.exports = { categorize, categoryFromUrl, categoryFromPackage, classifyText, CAT, WEAK_CAS };
+function categorize(info) {
+  return categorizeDetailed(info).category;
+}
+
+module.exports = { categorize, categorizeDetailed, categoryFromUrl, categoryFromPackage, classifyText, tsrSlug, CAT, WEAK_CAS };

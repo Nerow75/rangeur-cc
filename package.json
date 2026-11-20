@@ -1,7 +1,7 @@
 {
   "name": "rangeur-cc",
   "productName": "Rangeur CC",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Installe automatiquement le CC Sims 4 téléchargé dans le bon dossier Mods.",
   "main": "src/main.js",
   "author": "Rangeur CC",
@@ -9,7 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/run.js",
+    "test": "node test/run.js && node test/browse.js",
     "dist": "electron-builder --win nsis"
   },
   "build": {

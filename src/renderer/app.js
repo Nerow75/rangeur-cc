@@ -2,7 +2,7 @@
 /* global cc */
 
 const $ = sel => document.querySelector(sel);
-const state = { data: null, filter: 'all', category: '', query: '', seen: new Set(), openMenu: null, bulkOffered: false };
+const state = { view: 'library', data: null, filter: 'all', category: '', query: '', seen: new Set(), openMenu: null, bulkOffered: false };
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -118,7 +118,7 @@ function filteredItems(d) {
   return d.items.filter(i => {
     if (state.filter === 'on' && !i.enabled) return false;
     if (state.filter === 'off' && i.enabled) return false;
-    if (state.category && i.category !== state.category) return false;
+    if (state.category && i.category !== state.category && `${i.category}/${i.subcategory}` !== state.category) return false;
     if (!q) return true;
     return [i.name, i.creator, i.originalName].some(v => v && v.toLowerCase().includes(q));
   });
@@ -141,13 +141,29 @@ function renderGrid(d) {
 
 function renderCategories(d) {
   const counts = {};
-  for (const i of d.items) if (i.category) counts[i.category] = (counts[i.category] || 0) + 1;
+  const subs = {};
+  for (const i of d.items) {
+    if (!i.category) continue;
+    counts[i.category] = (counts[i.category] || 0) + 1;
+    if (i.subcategory) {
+      const k = `${i.category}/${i.subcategory}`;
+      const o = (subs[i.category] ||= {});
+      o[k] = (o[k] || 0) + 1;
+    }
+  }
   const cats = Object.keys(counts).sort((x, y) => x.localeCompare(y, 'fr'));
-  if (state.category && !counts[state.category]) state.category = '';
+  const exists = k => counts[k] || Object.values(subs).some(o => o[k]);
+  if (state.category && !exists(state.category)) state.category = '';
   const sel = $('#category');
-  sel.hidden = cats.length < 2;
-  sel.replaceChildren(el('option', { value: '' }, 'Toutes les catégories'),
-    ...cats.map(c => el('option', { value: c, selected: c === state.category }, `${c} (${counts[c]})`)));
+  sel.hidden = cats.length < 2 && !Object.keys(subs).length;
+  const opts = [el('option', { value: '' }, 'Toutes les catégories')];
+  for (const c of cats) {
+    opts.push(el('option', { value: c, selected: c === state.category }, `${c} (${counts[c]})`));
+    for (const [k, n] of Object.entries(subs[c] || {}).sort((a, b) => a[0].localeCompare(b[0], 'fr'))) {
+      opts.push(el('option', { value: k, selected: k === state.category }, `\u00a0\u00a0\u00a0${c} \u203a ${k.split('/')[1]} (${n})`));
+    }
+  }
+  sel.replaceChildren(...opts);
 }
 
 function card(item) {
@@ -160,7 +176,8 @@ function card(item) {
   if (item.trayFiles && item.trayFiles.length) badges.push(el('span', { class: 'badge' }, item.kind === 'tray' ? 'Lot / Sims' : '+ Lot / Sims'));
   if (badges.length) thumb.append(el('div', { class: 'badges' }, badges));
 
-  const sub = [item.category, item.creator, relDate(item.installedAt)].filter(Boolean).join(' · ');
+  const cat = item.category && item.subcategory ? `${item.category} › ${item.subcategory}` : item.category;
+  const sub = [cat, item.creator, relDate(item.installedAt)].filter(Boolean).join(' · ');
   const toggle = item.folder
     ? el('label', { class: 'switch' },
         el('input', { type: 'checkbox', checked: item.enabled, 'aria-label': 'Activer dans le jeu', onchange: () => run(() => cc.toggle(item.id)) }),
@@ -204,6 +221,119 @@ function askDelete(menu, item) {
   menu.querySelector('.danger')?.focus();
 }
 
+// ------------------------------------------------------------- trouver du CC
+
+const browse = { tree: null, category: null, sub: null, order: 'new', items: [], done: false, loading: false, token: 0, error: null };
+const prefs = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* sans stockage */ } }
+};
+const compact = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
+
+function setView(v) {
+  state.view = v;
+  prefs.set('rcc.view', v);
+  for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.v === v));
+  $('#library').hidden = v !== 'library';
+  $('#browse').hidden = v !== 'browse';
+  if (v === 'browse') openBrowse();
+}
+
+async function openBrowse() {
+  if (!browse.tree) {
+    try { browse.tree = await cc.tsrTree(); } catch (e) { toast(String(e.message || e), { kind: 'error' }); return; }
+    const saved = browse.tree.find(r => r.name === prefs.get('rcc.rayon'));
+    browse.category = (saved || browse.tree[0]).name;
+    const sub = prefs.get('rcc.sub');
+    browse.sub = saved && saved.subs.includes(sub) ? sub : null;
+  }
+  renderRayons();
+  if (!browse.items.length && !browse.loading) loadBrowse(true);
+}
+
+function pick(category, sub) {
+  if (category === browse.category && sub === browse.sub) return;
+  browse.category = category;
+  browse.sub = sub;
+  prefs.set('rcc.rayon', category);
+  prefs.set('rcc.sub', sub || '');
+  renderRayons();
+  loadBrowse(true);
+}
+
+function renderRayons() {
+  $('#rayons').replaceChildren(...browse.tree.map(r => el('button', {
+    'aria-current': String(r.name === browse.category),
+    onclick: () => pick(r.name, null)
+  }, r.name)));
+  const rayon = browse.tree.find(r => r.name === browse.category);
+  $('#browseTitle').textContent = browse.sub ? `${browse.category} › ${browse.sub}` : browse.category;
+  $('#subs').replaceChildren(...(rayon.subs.length ? [null, ...rayon.subs] : []).map(sub => el('button', {
+    role: 'tab', 'aria-selected': String(sub === browse.sub),
+    onclick: () => pick(browse.category, sub)
+  }, sub || 'Tout')));
+  for (const b of document.querySelectorAll('#order button')) b.setAttribute('aria-selected', String(b.dataset.o === browse.order));
+}
+
+async function loadBrowse(reset) {
+  const token = ++browse.token;
+  if (reset) { browse.items = []; browse.done = false; }
+  browse.error = null;
+  browse.loading = true;
+  renderTsrGrid();
+  try {
+    const res = await cc.tsrMore({ category: browse.category, sub: browse.sub, order: browse.order, reset });
+    if (token !== browse.token) return;
+    const known = new Set(browse.items.map(i => i.id));
+    browse.items.push(...res.items.filter(i => !known.has(i.id)));
+    browse.done = res.done || (!res.items.length && !reset);
+  } catch {
+    if (token !== browse.token) return;
+    browse.error = 'Impossible de joindre The Sims Resource. Vérifie ta connexion.';
+  } finally {
+    if (token === browse.token) { browse.loading = false; renderTsrGrid(); }
+  }
+}
+
+function tsrCard(it) {
+  const thumb = el('div', { class: 'thumb' });
+  if (it.image) thumb.append(el('img', { src: it.image, alt: '', loading: 'lazy', draggable: 'false', referrerpolicy: 'no-referrer' }));
+  else thumb.insertAdjacentHTML('beforeend', PLACEHOLDER);
+  const badges = [];
+  if (it.installed) badges.push(el('span', { class: 'badge ok' }, 'Déjà installé'));
+  if (it.earlyAccess) badges.push(el('span', { class: 'badge vip', title: 'Réservé aux membres VIP de TSR pendant quelques jours' }, 'VIP en avance'));
+  if (badges.length) thumb.append(el('div', { class: 'badges' }, badges));
+  const meta = [it.creator, it.downloads ? `${compact.format(it.downloads)} téléch.` : null].filter(Boolean).join(' · ');
+  const extra = !browse.sub && it.subs && it.subs.length ? it.subs.join(', ') : null;
+  return el('button', { class: 'card tsr-card', title: 'Ouvrir sur The Sims Resource', onclick: () => run(() => cc.tsrOpen(it.url)) },
+    thumb,
+    el('div', { class: 'card-body' }, el('h3', {}, it.title), el('p', {}, meta), extra ? el('p', {}, extra) : null));
+}
+
+function skeleton() {
+  return el('div', { class: 'card skeleton', 'aria-hidden': 'true' }, el('div', { class: 'thumb' }),
+    el('div', { class: 'card-body' }, el('div', { class: 'line' }), el('div', { class: 'line short' })));
+}
+
+function renderTsrGrid() {
+  const cards = browse.items.map(tsrCard);
+  if (browse.loading && !browse.items.length) cards.push(...Array.from({ length: 8 }, skeleton));
+  if (browse.error) {
+    cards.push(el('div', { class: 'browse-error' }, el('p', {}, browse.error),
+      el('button', { class: 'btn small', onclick: () => loadBrowse(!browse.items.length) }, 'Réessayer')));
+  } else if (!browse.loading && !browse.items.length) {
+    cards.push(el('p', { class: 'browse-error' }, browse.order === 'new'
+      ? 'Rien de ce genre dans les dernières créations. Essaie « Populaires ».'
+      : 'Rien trouvé ici pour l\'instant.'));
+  }
+  $('#tsrGrid').replaceChildren(...cards);
+  const more = $('#btnMore');
+  more.hidden = !browse.items.length || browse.done || !!browse.error;
+  more.disabled = browse.loading;
+  more.textContent = browse.loading ? 'Chargement…' : 'Voir plus';
+  $('#browseStatus').textContent = browse.items.length ? `${browse.items.length} CC affichés` : '';
+}
+
 // ------------------------------------------------------------- réglages
 
 function renderSettings(d) {
@@ -236,6 +366,12 @@ function openSettings(open) {
 // ------------------------------------------------------------- événements
 
 $('#btnTsr').onclick = () => run(cc.openTsr);
+for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => setView(b.dataset.v);
+$('#btnGoBrowse').onclick = () => setView('browse');
+$('#btnMore').onclick = () => loadBrowse(false);
+for (const b of document.querySelectorAll('#order button')) {
+  b.onclick = () => { if (browse.order === b.dataset.o) return; browse.order = b.dataset.o; renderRayons(); loadBrowse(true); };
+}
 $('#btnMods').onclick = () => run(cc.openMods);
 $('#btnSettings').onclick = () => openSettings(true);
 $('#btnCloseSettings').onclick = () => openSettings(false);
@@ -293,3 +429,4 @@ cc.onActivity(a => {
 window.addEventListener('focus', refresh);
 
 refresh();
+if (prefs.get('rcc.view') === 'browse') setView('browse');

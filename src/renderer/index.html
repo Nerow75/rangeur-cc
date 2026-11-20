@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https://www.thesimsresource.com; style-src 'self'; script-src 'self'">
   <title>Rangeur CC</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -14,6 +14,10 @@
         <h1>Rangeur CC</h1>
         <p class="status" id="status"><span class="dot"></span><span id="statusText">Surveillance active</span></p>
       </div>
+    </div>
+    <div class="segmented tabs" role="tablist" id="tabs" aria-label="Vue">
+      <button role="tab" data-v="library" aria-selected="true">Ma bibliothèque</button>
+      <button role="tab" data-v="browse" aria-selected="false">Trouver du CC</button>
     </div>
     <div class="top-actions">
       <button class="btn ghost" id="btnTsr" title="Ouvrir The Sims Resource dans le navigateur">Ouvrir TSR</button>
@@ -27,7 +31,7 @@
   <div id="busy" class="busy" hidden><span class="spinner"></span><span id="busyText"></span></div>
   <div id="banners" class="banners"></div>
 
-  <main>
+  <main id="library">
     <div class="toolbar" id="toolbar" hidden>
       <input type="search" id="search" placeholder="Rechercher un CC ou un créateur" autocomplete="off">
       <div class="segmented" role="tablist" id="filter">
@@ -50,7 +54,30 @@
         <li><span>3</span><div><strong>C'est rangé</strong><small>dans Mods, avec son aperçu ici</small></div></li>
       </ol>
       <p class="hint">Tu peux aussi glisser-déposer des fichiers dans cette fenêtre.</p>
+      <p class="hint"><button class="btn small" id="btnGoBrowse">Trouver du CC par catégorie</button></p>
     </section>
+  </main>
+
+  <main id="browse" class="browse" hidden>
+    <nav class="rayons" id="rayons" aria-label="Rayons"></nav>
+    <div class="browse-main">
+      <div class="browse-head">
+        <div>
+          <h2 id="browseTitle"></h2>
+          <p class="browse-hint">Clique sur un CC pour ouvrir sa page sur TSR. Télécharge-le là-bas : il sera rangé tout seul.</p>
+        </div>
+        <div class="segmented" role="tablist" id="order" aria-label="Ordre">
+          <button role="tab" data-o="new" aria-selected="true">Nouveautés</button>
+          <button role="tab" data-o="popular" aria-selected="false">Populaires</button>
+        </div>
+      </div>
+      <div class="chips" id="subs" role="tablist" aria-label="Sous-catégories"></div>
+      <section id="tsrGrid" class="grid" aria-live="polite"></section>
+      <div class="browse-foot">
+        <button class="btn" id="btnMore" hidden>Voir plus</button>
+        <p class="count" id="browseStatus"></p>
+      </div>
+    </div>
   </main>
 
   <aside id="settings" class="drawer" hidden aria-label="Réglages">

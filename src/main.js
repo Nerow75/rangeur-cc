@@ -9,6 +9,10 @@ const { findSimsUserDirs, ensureModsDir, layout } = require('./core/paths');
 const { DownloadWatcher } = require('./core/watcher');
 const { installDownload, setEnabled, itemDir, removeIfEmpty, isRelevant } = require('./core/installer');
 const { readModOptions, enableMods, isGameRunning } = require('./core/options');
+const { TsrBrowser } = require('./core/tsr-browse');
+const { tsrItemId } = require('./core/preview');
+
+const tsr = new TsrBrowser();
 
 // Mode bac à sable pour le développement : dossiers factices, rien de réel n'est touché.
 if (process.env.RCC_SANDBOX) {
@@ -255,6 +259,19 @@ ipcMain.handle('item:openFolder', (_e, id) => {
 ipcMain.handle('item:openSource', (_e, id) => {
   const url = findItem(id).sourceUrl;
   if (url && /^https?:\/\//i.test(url)) shell.openExternal(url);
+});
+
+// Onglet « Trouver du CC »
+ipcMain.handle('tsr:tree', () => TsrBrowser.tree());
+
+ipcMain.handle('tsr:more', async (_e, q) => {
+  const res = await tsr.more({ category: String(q.category), sub: q.sub ? String(q.sub) : null, order: q.order === 'popular' ? 'popular' : 'new', reset: !!q.reset });
+  const installed = new Set(store.items.map(i => tsrItemId(i.sourceUrl)).filter(Boolean));
+  return { ...res, items: res.items.map(i => ({ ...i, installed: installed.has(i.id) })) };
+});
+
+ipcMain.handle('tsr:open', (_e, url) => {
+  if (/^https:\/\/www\.thesimsresource\.com\//i.test(String(url))) shell.openExternal(url);
 });
 
 ipcMain.handle('open:mods', () => paths && shell.openPath(paths.modsDir));

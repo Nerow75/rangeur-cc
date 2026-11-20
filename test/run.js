@@ -15,6 +15,7 @@ const { readModOptions, enableMods } = require('../src/core/options');
 const { Store } = require('../src/core/store');
 const { tsrItemId, candidatePages } = require('../src/core/preview');
 const { categoryFromUrl, categoryFromPackage, categorize } = require('../src/core/categorize');
+const { classifyTsr, subFor } = require('../src/core/taxonomy');
 
 const { makePackage, makeRar, PNG } = require('./fixtures');
 
@@ -87,10 +88,11 @@ async function test(name, fn) {
     pkgItem = r.item;
     assert.strictEqual(pkgItem.name, 'Rebel Heart Set');
     assert.strictEqual(pkgItem.creator, 'DOLilac');
-    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Vêtements', 'Rebel Heart Set', 'TSR_rebel_heart_bottom.package')));
+    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Vêtements', 'Femme', 'Rebel Heart Set', 'TSR_rebel_heart_bottom.package')));
     assert.ok(!fs.existsSync(f), 'le fichier a quitté Téléchargements');
     assert.ok(pkgItem.preview.endsWith('.jpg'));
     assert.strictEqual(pkgItem.category, 'Vêtements');
+    assert.strictEqual(pkgItem.subcategory, 'Femme');
   });
 
   await test('refuse un doublon', async () => {
@@ -132,7 +134,7 @@ async function test(name, fn) {
     execFileSync(require('7zip-bin').path7za, ['a', f, path.join(src, '*'), '-r'], { stdio: 'ignore' });
     const r = await installDownload(f, ctx);
     assert.strictEqual(r.status, 'installed', r.message);
-    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Cheveux', 'Coiffure', 'hair.package')));
+    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Cheveux', 'Femme', 'Coiffure', 'hair.package')), 'préfixe EA "yf" = femme');
   });
 
   await test('installe un .rar', async () => {
@@ -180,6 +182,37 @@ async function test(name, fn) {
     assert.strictEqual(categorize({ packages: [], name: 'Canapé moderne' }), 'Meubles et objets');
   });
 
+  await test('classe dans une arborescence claire (genre, âge, pièce)', () => {
+    const c = (slug, title, description = '', keywords = '') => { const r = classifyTsr({ slug, title, description, keywords }); return r && r.category + ' > ' + r.subs.join('+'); };
+    assert.strictEqual(c('hair-hairstyles', "S-CLUB Men's short hair"), 'Cheveux > Homme');
+    assert.strictEqual(c('hair-hairstyles', 'Nikita Hair', 'A messy, high bun hairstyle. Teen - Elder'), 'Cheveux > Femme');
+    assert.strictEqual(c('hair-hairstyles', 'Athena V1 - Toddler Conversion'), 'Cheveux > Bambin et bébé');
+    assert.strictEqual(c('hair-hairstyles', 'Mini Vivienne - Child Hairstyle'), 'Cheveux > Enfant');
+    assert.strictEqual(c('hair-hairstyles', 'Kerionne Hair', 'For female and male frames!'), 'Cheveux > Femme+Homme');
+    assert.strictEqual(c('hair-hairstyles', 'Charles Beard'), 'Cheveux > Barbes et moustaches');
+    assert.strictEqual(c('hair-hairstyles-male', 'Troy'), 'Cheveux > Homme');
+    assert.strictEqual(c('clothing-male-elder-everyday', 'Camino Jacket'), 'Vêtements > Homme');
+    assert.strictEqual(c('clothing-female-toddler', 'Bikini'), 'Vêtements > Bambin et bébé');
+    assert.strictEqual(c('shoes', 'Retro suede boots Male'), 'Chaussures > Homme');
+    assert.strictEqual(c('accessories-female-earrings', 'Hoop'), 'Accessoires > Bijoux');
+    assert.strictEqual(c('makeup-female-eyecolors', 'Esme Eyes'), 'Peau et yeux > Yeux (lentilles)');
+    assert.strictEqual(c('makeup-female-lipstick', 'Esme Lipstick'), 'Maquillage > Lèvres');
+    assert.strictEqual(c('objects-furnishing-decor-clutter', 'Pittsburgh Soap Dispenser'), 'Meubles et objets > Salle de bain');
+    assert.strictEqual(c('objects-furnishing-decor-clutter', 'MIRA Kitchen Collection Toaster'), 'Meubles et objets > Cuisine');
+    assert.strictEqual(c('objects-furnishing-comfort-beds', 'Julietta - kids bed single'), "Meubles et objets > Chambre d'enfant");
+    assert.strictEqual(c('objects-furnishing-comfort-beds', 'Tiffany bed'), 'Meubles et objets > Chambre');
+    assert.strictEqual(c('objects-furnishing-plumbing-sinks', 'Marble Sink'), 'Meubles et objets > Salle de bain');
+    assert.strictEqual(c('objects-furnishing', 'Lux Royale - Sofa'), 'Meubles et objets > Salon');
+    assert.strictEqual(c('objects-buildmode-windows', 'Arch window'), 'Construction > Portes et fenêtres');
+    assert.strictEqual(c('rooms-kitchen', 'Ronia - Kitchen'), 'Lots et Sims > Pièces');
+    assert.strictEqual(c('pets-accessories-dogs', 'Collar'), 'Animaux > Chiens');
+    assert.strictEqual(c('mods-poses', 'Pal poses'), 'Poses et animations > ');
+    assert.strictEqual(subFor('Cheveux', 'Coupe courte', 'ym Hair Short'), 'Homme');
+    assert.strictEqual(subFor('Cheveux', 'Coupe courte homme'), 'Homme');
+    assert.strictEqual(subFor('Meubles et objets', 'Frigo rétro cuisine'), 'Cuisine');
+    assert.strictEqual(subFor('Vêtements', 'Robe soiree'), null);
+  });
+
   await test('sans tri par catégorie, tout va à la racine de Mods', async () => {
     const f = path.join(dl, 'Sans_tri.package'); fs.writeFileSync(f, makePackage(70));
     const r = await installDownload(f, { ...ctx, settings: { ...ctx.settings, sortByCategory: false } });
@@ -200,8 +233,9 @@ async function test(name, fn) {
     const it = store.getItem(pkgItem.id);
     let folder = setEnabled(it, false, paths);
     store.updateItem(it.id, { enabled: false, folder });
-    assert.strictEqual(folder, path.join('Vêtements', 'Rebel Heart Set'));
-    assert.ok(fs.existsSync(path.join(paths.disabledDir, 'Vêtements', 'Rebel Heart Set', 'TSR_rebel_heart_bottom.package')));
+    assert.strictEqual(folder, path.join('Vêtements', 'Femme', 'Rebel Heart Set'));
+    assert.ok(fs.existsSync(path.join(paths.disabledDir, 'Vêtements', 'Femme', 'Rebel Heart Set', 'TSR_rebel_heart_bottom.package')));
+    assert.ok(!fs.existsSync(path.join(paths.modsDir, 'Vêtements', 'Femme')), 'dossier de sous-catégorie vide supprimé');
     assert.ok(!fs.existsSync(path.join(paths.modsDir, folder)));
     folder = setEnabled(it, true, paths);
     store.updateItem(it.id, { enabled: true, folder });
