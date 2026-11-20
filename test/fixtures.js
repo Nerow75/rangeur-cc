@@ -6,11 +6,17 @@ const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000
   '1f15c4890000000d49444154789c6360f8cfc0f01f0005000201a5f1f8a90000000049454e44ae426082', 'hex');
 
 /** Fabrique un .package DBPF 2.1 avec une ressource miniature compressée zlib. */
-function makePackage(seed) {
+// opts.casName : crée une pièce CAS portant ce nom (ex. "yfHair_Long")
+// opts.type    : type de la ressource principale (ex. 0x319e4f1d pour un objet)
+function makePackage(seed, opts = {}) {
   const thumb = Buffer.concat([PNG, Buffer.alloc(400, seed)]); // > 256 octets
-  const other = Buffer.from('ressource-' + seed);
+  let main = Buffer.from('ressource-' + seed);
+  if (opts.casName) {
+    const name = Buffer.from(opts.casName, 'utf16le').swap16(); // UTF-16 big-endian
+    main = Buffer.concat([Buffer.from([0x2e, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, name.length]), name, Buffer.alloc(40)]);
+  }
   const resources = [
-    { type: 0x034aeecb, data: other, compress: false },
+    { type: opts.type ?? 0x034aeecb, data: main, compress: !!opts.casName },
     { type: 0x3c1af1f2, data: thumb, compress: true }
   ];
   const header = Buffer.alloc(96);

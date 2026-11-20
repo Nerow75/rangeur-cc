@@ -15,6 +15,7 @@ const { execFile } = require('child_process');
 const { readZoneInfo } = require('./zone');
 const { extractThumbnail } = require('./dbpf');
 const { fetchPagePreview } = require('./preview');
+const { categorize } = require('./categorize');
 
 const MOD_EXT = new Set(['.package', '.ts4script']);
 const TRAY_EXT = new Set(['.trayitem', '.blueprint', '.bpi', '.hhi', '.sgi', '.householdbinary', '.room', '.rmi']);
@@ -175,14 +176,28 @@ async function installDownload(filePath, ctx) {
     const name = (preview && preview.name) || nameFromFile(filePath);
     const id = crypto.randomUUID();
 
-    // Fichiers de mods -> Mods/<nom>/
+    const hasScript = modFiles.some(f => extOf(f) === '.ts4script');
+    const category = categorize({
+      urls: [preview && preview.pageUrl, zone.referrerUrl, zone.hostUrl],
+      packages: modFiles.filter(f => extOf(f) === '.package'),
+      hasScript,
+      trayOnly: !modFiles.length,
+      name
+    });
+
+    // Fichiers de mods -> Mods/<Catégorie>/<Nom>/
+    // Exception : un .ts4script ne doit pas être à plus d'un niveau de Mods,
+    // donc les mods de script vont dans Mods/[Script] <Nom>/.
     let folder = null;
     const installed = [];
     if (modFiles.length) {
-      fs.mkdirSync(paths.modsDir, { recursive: true });
-      const dir = uniquePath(paths.modsDir, sanitizeName(name), false);
+      const sort = ctx.settings.sortByCategory !== false;
+      const parent = sort && !hasScript ? path.join(paths.modsDir, category) : paths.modsDir;
+      const dirName = sanitizeName(sort && hasScript ? `[Script] ${name}` : name);
+      fs.mkdirSync(parent, { recursive: true });
+      const dir = uniquePath(parent, dirName, false);
       fs.mkdirSync(dir);
-      folder = path.basename(dir);
+      folder = path.relative(paths.modsDir, dir);
       for (const f of modFiles) {
         const dest = uniquePath(dir, sanitizeName(path.basename(f), 120), true);
         moveFile(f, dest);
@@ -230,7 +245,8 @@ async function installDownload(filePath, ctx) {
       files: installed,
       trayFiles: trayInstalled,
       hashes,
-      hasScript: installed.some(n => n.toLowerCase().endsWith('.ts4script')),
+      hasScript,
+      category,
       kind: modFiles.length ? 'mod' : 'tray',
       sourceUrl: (preview && preview.pageUrl) || zone.referrerUrl || null,
       preview: previewFile,
@@ -245,14 +261,24 @@ async function installDownload(filePath, ctx) {
 }
 
 /** Active / désactive : déplace le dossier entre Mods et "Mods désactivés". */
+// La structure Catégorie/Nom est conservée des deux côtés.
 function setEnabled(item, enabled, paths) {
   if (!item.folder || item.enabled === enabled) return item.folder;
-  const from = path.join(enabled ? paths.disabledDir : paths.modsDir, item.folder);
-  const toDir = enabled ? paths.modsDir : paths.disabledDir;
-  fs.mkdirSync(toDir, { recursive: true });
-  const to = uniquePath(toDir, item.folder, false);
+  const fromBase = enabled ? paths.disabledDir : paths.modsDir;
+  const toBase = enabled ? paths.modsDir : paths.disabledDir;
+  const from = path.join(fromBase, item.folder);
+  const toParent = path.join(toBase, path.dirname(item.folder));
+  fs.mkdirSync(toParent, { recursive: true });
+  const to = uniquePath(toParent, path.basename(item.folder), false);
   fs.renameSync(from, to);
-  return path.basename(to);
+  removeIfEmpty(path.dirname(from), fromBase);
+  return path.relative(toBase, to);
+}
+
+/** Supprime un dossier de catégorie devenu vide (jamais Mods lui-même). */
+function removeIfEmpty(dir, base) {
+  if (path.resolve(dir) === path.resolve(base)) return;
+  try { if (!fs.readdirSync(dir).length) fs.rmdirSync(dir); } catch { /* ignore */ }
 }
 
 function itemDir(item, paths) {
@@ -261,6 +287,6 @@ function itemDir(item, paths) {
 }
 
 module.exports = {
-  installDownload, setEnabled, itemDir, isRelevant, extractArchive,
+  installDownload, setEnabled, itemDir, removeIfEmpty, isRelevant, extractArchive,
   sanitizeName, nameFromFile, MOD_EXT, TRAY_EXT, ARCHIVE_EXT
 };

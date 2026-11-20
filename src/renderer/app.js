@@ -2,7 +2,7 @@
 /* global cc */
 
 const $ = sel => document.querySelector(sel);
-const state = { data: null, filter: 'all', query: '', seen: new Set(), openMenu: null, bulkOffered: false };
+const state = { data: null, filter: 'all', category: '', query: '', seen: new Set(), openMenu: null, bulkOffered: false };
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -118,6 +118,7 @@ function filteredItems(d) {
   return d.items.filter(i => {
     if (state.filter === 'on' && !i.enabled) return false;
     if (state.filter === 'off' && i.enabled) return false;
+    if (state.category && i.category !== state.category) return false;
     if (!q) return true;
     return [i.name, i.creator, i.originalName].some(v => v && v.toLowerCase().includes(q));
   });
@@ -131,10 +132,22 @@ function renderGrid(d) {
   const off = d.items.filter(i => !i.enabled).length;
   $('#count').textContent = total ? `${total} CC${off ? ` · ${off} désactivé${off > 1 ? 's' : ''}` : ''}` : '';
 
+  renderCategories(d);
   const grid = $('#grid');
   grid.replaceChildren(...items.map(card));
   if (total && !items.length) grid.append(el('p', { class: 'count' }, 'Aucun résultat.'));
   for (const i of d.items) state.seen.add(i.id);
+}
+
+function renderCategories(d) {
+  const counts = {};
+  for (const i of d.items) if (i.category) counts[i.category] = (counts[i.category] || 0) + 1;
+  const cats = Object.keys(counts).sort((x, y) => x.localeCompare(y, 'fr'));
+  if (state.category && !counts[state.category]) state.category = '';
+  const sel = $('#category');
+  sel.hidden = cats.length < 2;
+  sel.replaceChildren(el('option', { value: '' }, 'Toutes les catégories'),
+    ...cats.map(c => el('option', { value: c, selected: c === state.category }, `${c} (${counts[c]})`)));
 }
 
 function card(item) {
@@ -147,7 +160,7 @@ function card(item) {
   if (item.trayFiles && item.trayFiles.length) badges.push(el('span', { class: 'badge' }, item.kind === 'tray' ? 'Lot / Sims' : '+ Lot / Sims'));
   if (badges.length) thumb.append(el('div', { class: 'badges' }, badges));
 
-  const sub = [item.creator, relDate(item.installedAt)].filter(Boolean).join(' · ');
+  const sub = [item.category, item.creator, relDate(item.installedAt)].filter(Boolean).join(' · ');
   const toggle = item.folder
     ? el('label', { class: 'switch' },
         el('input', { type: 'checkbox', checked: item.enabled, 'aria-label': 'Activer dans le jeu', onchange: () => run(() => cc.toggle(item.id)) }),
@@ -233,6 +246,7 @@ $('#btnOpenDl').onclick = () => run(cc.openDownloads);
 for (const box of document.querySelectorAll('[data-s]')) {
   box.onchange = () => run(async () => { await cc.setSettings({ [box.dataset.s]: box.checked }); await refresh(); });
 }
+$('#category').onchange = e => { state.category = e.target.value; renderGrid(state.data); };
 $('#search').oninput = e => { state.query = e.target.value; renderGrid(state.data); };
 for (const b of document.querySelectorAll('#filter button')) {
   b.onclick = () => {

@@ -4,8 +4,9 @@ Petite app Windows qui surveille le dossier Téléchargements et range tout seul
 
 ## Ce qu'elle fait
 
+- Range le CC par catégorie : `Mods/Cheveux/`, `Vêtements/`, `Chaussures/`, `Accessoires/`, `Maquillage/`, `Peau et yeux/`, `Meubles et objets/`, `Construction/`, `Poses et animations/`, `Animaux/`, `Mods de gameplay/`, `Lots et Sims/`, `Autres/`. La catégorie vient de la fiche TSR, sinon du contenu du `.package` et du nom. Les mods de script vont dans `Mods/[Script] <Nom>/` car le jeu ignore un `.ts4script` rangé à plus d'un niveau. Option désactivable dans les réglages.
 - Détecte chaque `.package`, `.ts4script`, `.zip`, `.rar` ou `.7z` téléchargé, attend la fin du téléchargement, puis :
-  - range le CC dans `Mods/<Nom du CC>/` (un seul niveau, donc compatible avec les mods de script) ;
+  - range le CC dans `Mods/<Catégorie>/<Nom du CC>/` ;
   - range les lots, foyers et pièces (`.trayitem`, `.blueprint`, `.bpi`, `.hhi`, `.sgi`, `.householdbinary`, `.room`, `.rmi`) dans `Tray/` ;
   - ignore les archives qui ne contiennent rien pour les Sims ;
   - refuse les doublons.
@@ -40,6 +41,7 @@ node test/sandbox.js drop C:\temp\rcc-sb   # simule des téléchargements TSR
 - `src/core/paths.js` : détection du dossier du jeu
 - `src/core/watcher.js` : surveillance du dossier Téléchargements
 - `src/core/installer.js` : extraction et rangement
+- `src/core/categorize.js` : choix de la catégorie (Cheveux, Vêtements...)
 - `src/core/dbpf.js` : lecture des miniatures dans les `.package`
 - `src/core/preview.js` : aperçu depuis la page d'origine (TSR et balises `og:`)
 - `src/core/options.js` : réglages mods de `Options.ini`

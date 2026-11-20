@@ -161,4 +161,4 @@ function extractThumbnail(packagePath) {
   }
 }
 
-module.exports = { extractThumbnail, readIndex, refpack, THUMB_TYPES };
+module.exports = { extractThumbnail, readIndex, readEntry, refpack, THUMB_TYPES };

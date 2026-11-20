@@ -7,7 +7,7 @@ const { pathToFileURL } = require('url');
 const { Store } = require('./core/store');
 const { findSimsUserDirs, ensureModsDir, layout } = require('./core/paths');
 const { DownloadWatcher } = require('./core/watcher');
-const { installDownload, setEnabled, itemDir, isRelevant } = require('./core/installer');
+const { installDownload, setEnabled, itemDir, removeIfEmpty, isRelevant } = require('./core/installer');
 const { readModOptions, enableMods, isGameRunning } = require('./core/options');
 
 // Mode bac à sable pour le développement : dossiers factices, rien de réel n'est touché.
@@ -234,7 +234,10 @@ ipcMain.handle('item:toggle', (_e, id) => {
 ipcMain.handle('item:delete', async (_e, id) => {
   const it = findItem(id);
   const dir = itemDir(it, paths);
-  if (dir && fs.existsSync(dir)) await shell.trashItem(dir);
+  if (dir && fs.existsSync(dir)) {
+    await shell.trashItem(dir);
+    removeIfEmpty(path.dirname(dir), it.enabled ? paths.modsDir : paths.disabledDir);
+  }
   for (const t of it.trayFiles || []) {
     const p = path.join(paths.trayDir, t);
     if (fs.existsSync(p)) await shell.trashItem(p).catch(() => {});
@@ -259,7 +262,7 @@ ipcMain.handle('open:downloads', () => shell.openPath(store.settings.downloadsDi
 ipcMain.handle('open:tsr', () => shell.openExternal('https://www.thesimsresource.com/downloads/browse/category/sims4/'));
 
 ipcMain.handle('settings:set', (_e, patch) => {
-  const allowed = ['removeAfterInstall', 'notifications', 'openAtLogin', 'keepInTray'];
+  const allowed = ['removeAfterInstall', 'notifications', 'openAtLogin', 'keepInTray', 'sortByCategory'];
   const clean = Object.fromEntries(Object.entries(patch).filter(([k]) => allowed.includes(k)).map(([k, v]) => [k, !!v]));
   store.setSettings(clean);
   applyLoginItem();
@@ -318,6 +321,7 @@ app.whenReady().then(() => {
     simsDir: null,
     downloadsDir: app.getPath('downloads'),
     removeAfterInstall: true,
+    sortByCategory: true,
     notifications: true,
     openAtLogin: true,
     keepInTray: true

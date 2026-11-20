@@ -14,6 +14,7 @@ const { readZoneInfo } = require('../src/core/zone');
 const { readModOptions, enableMods } = require('../src/core/options');
 const { Store } = require('../src/core/store');
 const { tsrItemId, candidatePages } = require('../src/core/preview');
+const { categoryFromUrl, categoryFromPackage, categorize } = require('../src/core/categorize');
 
 const { makePackage, makeRar, PNG } = require('./fixtures');
 
@@ -40,7 +41,7 @@ async function test(name, fn) {
     paths, store, cacheDir: path.join(root, 'app', 'previews'), settings: store.settings,
     trash: async p => { trashed.push(p); fs.rmSync(p, { force: true }); },
     fetchPreview: async zone => zone.referrerUrl && /1798232/.test(zone.referrerUrl)
-      ? { pageUrl: 'https://www.thesimsresource.com/x/id/1798232/', name: 'Rebel Heart Set', creator: 'DOLilac', image: { ext: 'jpg', data: Buffer.alloc(2000, 1) } }
+      ? { pageUrl: 'https://www.thesimsresource.com/members/DOLilac/downloads/details/category/sims4-clothing-female-elder-everyday/title/x/id/1798232/', name: 'Rebel Heart Set', creator: 'DOLilac', image: { ext: 'jpg', data: Buffer.alloc(2000, 1) } }
       : null
   };
 
@@ -86,9 +87,10 @@ async function test(name, fn) {
     pkgItem = r.item;
     assert.strictEqual(pkgItem.name, 'Rebel Heart Set');
     assert.strictEqual(pkgItem.creator, 'DOLilac');
-    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Rebel Heart Set', 'TSR_rebel_heart_bottom.package')));
+    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Vêtements', 'Rebel Heart Set', 'TSR_rebel_heart_bottom.package')));
     assert.ok(!fs.existsSync(f), 'le fichier a quitté Téléchargements');
     assert.ok(pkgItem.preview.endsWith('.jpg'));
+    assert.strictEqual(pkgItem.category, 'Vêtements');
   });
 
   await test('refuse un doublon', async () => {
@@ -113,7 +115,7 @@ async function test(name, fn) {
     const f = path.join(dl, 'Mon_super_set.zip'); zip.writeZip(f);
     const r = await installDownload(f, ctx);
     assert.strictEqual(r.status, 'installed', r.message);
-    const dir = path.join(paths.modsDir, 'Mon super set');
+    const dir = path.join(paths.modsDir, '[Script] Mon super set'); // 1 seul niveau pour le script
     const files = fs.readdirSync(dir).sort();
     assert.deepStrictEqual(files, ['evil.package', 'inner.package', 'mod.ts4script', 'part1.package']);
     assert.ok(fs.existsSync(path.join(paths.trayDir, '0x00000000123.trayitem')));
@@ -125,12 +127,12 @@ async function test(name, fn) {
 
   await test('installe un .7z', async () => {
     const src = path.join(root, '7src'); fs.mkdirSync(path.join(src, 'a', 'b'), { recursive: true });
-    fs.writeFileSync(path.join(src, 'a', 'b', 'hair.package'), makePackage(4));
+    fs.writeFileSync(path.join(src, 'a', 'b', 'hair.package'), makePackage(4, { casName: 'yfHair_EP01_LongWavy' }));
     const f = path.join(dl, 'Coiffure.7z');
     execFileSync(require('7zip-bin').path7za, ['a', f, path.join(src, '*'), '-r'], { stdio: 'ignore' });
     const r = await installDownload(f, ctx);
     assert.strictEqual(r.status, 'installed', r.message);
-    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Coiffure', 'hair.package')));
+    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Cheveux', 'Coiffure', 'hair.package')));
   });
 
   await test('installe un .rar', async () => {
@@ -138,7 +140,51 @@ async function test(name, fn) {
     fs.writeFileSync(f, makeRar([['Robe/robe.package', makePackage(5)], ['Robe\\sous\\robe2.package', makePackage(6)], ['Robe/lisez-moi.txt', Buffer.from('x')]]));
     const r = await installDownload(f, ctx);
     assert.strictEqual(r.status, 'installed', r.message);
-    assert.deepStrictEqual(fs.readdirSync(path.join(paths.modsDir, 'Robe soiree')), ['robe.package', 'robe2.package']);
+    assert.deepStrictEqual(fs.readdirSync(path.join(paths.modsDir, 'Vêtements', 'Robe soiree')), ['robe.package', 'robe2.package']);
+  });
+
+  await test('devine la catégorie (URL TSR, contenu du .package, nom)', () => {
+    const tsr = slug => categoryFromUrl(`https://www.thesimsresource.com/members/A/downloads/details/category/sims4-${slug}/title/x/id/1/`);
+    assert.strictEqual(tsr('hair-hairstyles'), 'Cheveux');
+    assert.strictEqual(tsr('hair-facial-beards'), 'Cheveux');
+    assert.strictEqual(tsr('makeup-female-lipstick'), 'Maquillage');
+    assert.strictEqual(tsr('makeup-female-eyecolors'), 'Peau et yeux');
+    assert.strictEqual(tsr('skintones'), 'Peau et yeux');
+    assert.strictEqual(tsr('accessories-female-earrings'), 'Accessoires');
+    assert.strictEqual(tsr('shoes'), 'Chaussures');
+    assert.strictEqual(tsr('clothing-female-elder-everyday'), 'Vêtements');
+    assert.strictEqual(tsr('objects'), 'Meubles et objets');
+    assert.strictEqual(tsr('objectrecolors-furnishing-comfort-beds'), 'Meubles et objets');
+    assert.strictEqual(tsr('sets-objects-adultbedroom'), 'Meubles et objets');
+    assert.strictEqual(tsr('sets-makeup'), 'Maquillage');
+    assert.strictEqual(tsr('floors'), 'Construction');
+    assert.strictEqual(tsr('walls'), 'Construction');
+    assert.strictEqual(tsr('terrainpaint'), 'Construction');
+    assert.strictEqual(tsr('lots-residential'), 'Lots et Sims');
+    assert.strictEqual(tsr('pets'), 'Animaux');
+    assert.strictEqual(tsr('mods'), 'Mods de gameplay');
+    const pkg = (n, o) => { const f = path.join(root, n); fs.writeFileSync(f, makePackage(60, o)); return f; };
+    assert.strictEqual(categoryFromPackage(pkg('a.package', { casName: 'yfLipstick_Matte' })), 'Maquillage');
+    assert.strictEqual(categoryFromPackage(pkg('a2.package', { casName: 'yfHair_EP01_LongWavy' })), 'Cheveux');
+    assert.strictEqual(categoryFromPackage(pkg('b.package', { casName: 'ymShoes_Boots' })), 'Chaussures');
+    assert.strictEqual(categoryFromPackage(pkg('c.package', { casName: 'yuEyebrows_Soft' })), 'Peau et yeux');
+    assert.strictEqual(categoryFromPackage(pkg('d.package', { casName: 'yfTop_Crop' })), 'Vêtements');
+    assert.strictEqual(categoryFromPackage(pkg('e.package', { type: 0x319e4f1d })), 'Meubles et objets');
+    assert.strictEqual(categorize({ packages: [], name: 'Canapé sofa moderne' }), 'Meubles et objets');
+    assert.strictEqual(categorize({ packages: [], name: 'truc' }), 'Autres');
+    assert.strictEqual(categorize({ urls: ['https://www.thesimsresource.com/members/A/downloads/details/category/sims4-lots-residential/title/x/id/1/'], packages: [pkg('l.package')], name: 'Villa' }), 'Lots et Sims');
+    assert.strictEqual(categorize({ packages: [pkg('f.package')], name: 'cheveux bouclés sans source' }), 'Cheveux');
+    assert.strictEqual(categorize({ packages: [pkg('g.package')], name: 'Robe de soirée' }), 'Vêtements');
+    assert.strictEqual(categorize({ packages: [pkg('h.package')], name: 'xyz' }), 'Vêtements');
+    assert.strictEqual(categorize({ packages: [], name: "Boucles d'oreilles dorées" }), 'Accessoires');
+    assert.strictEqual(categorize({ packages: [], name: 'Canapé moderne' }), 'Meubles et objets');
+  });
+
+  await test('sans tri par catégorie, tout va à la racine de Mods', async () => {
+    const f = path.join(dl, 'Sans_tri.package'); fs.writeFileSync(f, makePackage(70));
+    const r = await installDownload(f, { ...ctx, settings: { ...ctx.settings, sortByCategory: false } });
+    assert.ok(fs.existsSync(path.join(paths.modsDir, 'Sans tri', 'Sans_tri.package')));
+    store.removeItem(r.item.id);
   });
 
   await test('ignore une archive sans contenu Sims', async () => {
@@ -154,7 +200,8 @@ async function test(name, fn) {
     const it = store.getItem(pkgItem.id);
     let folder = setEnabled(it, false, paths);
     store.updateItem(it.id, { enabled: false, folder });
-    assert.ok(fs.existsSync(path.join(paths.disabledDir, folder, 'TSR_rebel_heart_bottom.package')));
+    assert.strictEqual(folder, path.join('Vêtements', 'Rebel Heart Set'));
+    assert.ok(fs.existsSync(path.join(paths.disabledDir, 'Vêtements', 'Rebel Heart Set', 'TSR_rebel_heart_bottom.package')));
     assert.ok(!fs.existsSync(path.join(paths.modsDir, folder)));
     folder = setEnabled(it, true, paths);
     store.updateItem(it.id, { enabled: true, folder });
